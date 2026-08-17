@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "607524785131",
+    "project_id": "reshme-info",
+    "storage_bucket": "reshme-info.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:607524785131:android:e21b482d05e7bf0e7067ae",
+        "android_client_info": {
+          "package_name": "com.master.reshmeinfo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCiYg03S8sFdKyGZF0Czb_zBB5ZIJPZdPY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
