@@ -25,21 +25,31 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<Map<String, dynamic>> _latestPrices = [];
+  List<Map<String, dynamic>> _datePrices = [];
   List<Map<String, dynamic>> _featuredGuides = [];
   String _userName = '';
   String _preferredMarket = '';
+  late String _selectedDate; // Default locked to today: YYYY-MM-DD
   bool _isLoading = true;
+  bool _isTodayEmpty = false;
 
   @override
   void initState() {
     super.initState();
     AnalyticsService.logScreenView('HomeScreen');
+    _selectedDate = _formatDate(DateTime.now());
     _loadUserPreferences();
-    _loadHomeData();
+    _loadDataForDate(_selectedDate);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       VersionService.checkForUpdates(context);
     });
+  }
+
+  String _formatDate(DateTime dt) {
+    final year = dt.year.toString();
+    final month = dt.month.toString().padLeft(2, '0');
+    final day = dt.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 
   Future<void> _loadUserPreferences() async {
@@ -50,18 +60,33 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _loadHomeData() async {
+  Future<void> _loadDataForDate(String targetDate) async {
+    setState(() => _isLoading = true);
     try {
       final client = Supabase.instance.client;
 
-      // Fetch latest price updates
+      // 1. Fetch prices for the locked/selected date
       final pricesResponse = await client
           .from('cocoon_prices')
           .select('*')
-          .order('report_date', ascending: false)
-          .limit(8);
+          .eq('report_date', targetDate)
+          .order('avg_price', ascending: false);
 
-      // Fetch featured guides
+      List<Map<String, dynamic>> prices = List<Map<String, dynamic>>.from(pricesResponse);
+      bool todayEmpty = false;
+
+      // If today is selected but no prices uploaded yet, fetch latest available date as fallback preview
+      if (prices.isEmpty && targetDate == _formatDate(DateTime.now())) {
+        todayEmpty = true;
+        final fallbackResponse = await client
+            .from('cocoon_prices')
+            .select('*')
+            .order('report_date', ascending: false)
+            .limit(10);
+        prices = List<Map<String, dynamic>>.from(fallbackResponse);
+      }
+
+      // 2. Fetch featured guides
       final guidesResponse = await client
           .from('content_items')
           .select('*')
@@ -70,12 +95,46 @@ class _HomeScreenState extends State<HomeScreen> {
           .limit(3);
 
       setState(() {
-        _latestPrices = List<Map<String, dynamic>>.from(pricesResponse);
+        _datePrices = prices;
         _featuredGuides = List<Map<String, dynamic>>.from(guidesResponse);
+        _isTodayEmpty = todayEmpty;
         _isLoading = false;
       });
     } catch (e) {
       setState(() => _isLoading = false);
+    }
+  }
+
+  void _onDateSelected(String date) {
+    setState(() {
+      _selectedDate = date;
+    });
+    _loadDataForDate(date);
+  }
+
+  Future<void> _pickCustomDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.tryParse(_selectedDate) ?? now,
+      firstDate: DateTime(2024, 1, 1),
+      lastDate: now, // Locked: Cannot pick future dates
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppTheme.primaryColor,
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF0F172A),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      _onDateSelected(_formatDate(picked));
     }
   }
 
@@ -88,20 +147,20 @@ class _HomeScreenState extends State<HomeScreen> {
     final date = price['report_date'] ?? '';
 
     final text = isKn
-        ? '*ರೇಷ್ಮೆ ಮಾಹಿತಿ (Reshme Info) ಮಾರುಕಟ್ಟೆ ದರ*\n'
+        ? '*ರೇಷ್ಮೆ ಮಾಹಿತಿ (Reshme Info) ಮಾರುಕಟ್ಟೆ ಹರಾಜು ದರ*\n'
           'ದಿನಾಂಕ: $date\n'
           'ಮಾರುಕಟ್ಟೆ: $market\n'
           'ತಳಿ: $breed\n'
           'ಸರಾಸರಿ ದರ: ₹$avg/ಕೆಜಿ\n'
           'ಕನಿಷ್ಠ: ₹$min | ಗರಿಷ್ಠ: ₹$max\n\n'
-          'ಹೆಚ್ಚಿನ ವಿವರಗಳಿಗಾಗಿ Reshme Info ಆ್ಯಪ್ ಡೌನ್‌ಲೋಡ್ ಮಾಡಿ.'
+          'ದೈನಂದಿನ ಅಧಿಕೃತ ರೇಷ್ಮೆ ದರಗಳಿಗಾಗಿ Reshme Info ಆ್ಯಪ್ ಬಳಸಿ.'
         : '*Reshme Info APMC Silk Cocoon Rate*\n'
           'Date: $date\n'
           'Market: $market\n'
           'Breed: $breed\n'
           'Average: ₹$avg/kg\n'
           'Min: ₹$min | Max: ₹$max\n\n'
-          'Download Reshme Info App for live rates.';
+          'Download Reshme Info App for live market rates.';
 
     final uri = Uri.parse('whatsapp://send?text=${Uri.encodeComponent(text)}');
     try {
@@ -117,10 +176,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final isKn = Localizations.localeOf(context).languageCode == 'kn';
 
-    final topPrice = _latestPrices.isNotEmpty ? _latestPrices.first : null;
+    final todayStr = _formatDate(DateTime.now());
+    final yesterdayStr = _formatDate(DateTime.now().subtract(const Duration(days: 1)));
+    final dayBeforeStr = _formatDate(DateTime.now().subtract(const Duration(days: 2)));
+
+    // Highlight preferred market if exists, else first price
+    final heroPrice = _datePrices.firstWhere(
+      (p) => _preferredMarket.isNotEmpty && (p['market_name'] ?? '').toString().toLowerCase() == _preferredMarket.toLowerCase(),
+      orElse: () => _datePrices.isNotEmpty ? _datePrices.first : {},
+    );
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -147,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
         actions: [
-          // Language Switcher
+          // Language Switcher Pill
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: InkWell(
@@ -179,7 +245,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(width: 8),
 
-          // Notification Bell
           IconButton(
             icon: const Icon(Icons.notifications_none, color: Colors.white),
             onPressed: widget.onOpenNotifications,
@@ -188,17 +253,17 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadHomeData,
+        onRefresh: () => _loadDataForDate(_selectedDate),
         color: AppTheme.primaryColor,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Hero Welcome Section
+              // Top Locked Date Navigation Header
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 decoration: const BoxDecoration(
                   color: AppTheme.primaryColor,
                   borderRadius: BorderRadius.only(
@@ -209,59 +274,87 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Farmer Greeting
+                    Text(
+                      _userName.isNotEmpty
+                          ? (isKn ? 'ನಮಸ್ಕಾರ, $_userName' : 'Welcome, $_userName')
+                          : (isKn ? 'ದೈನಂದಿನ ಹರಾಜು ದರಗಳು' : 'Daily Auction Intelligence'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Date Selection Chips Bar (Today, Yesterday, Day Before, Custom Picker)
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _userName.isNotEmpty
-                                  ? (isKn ? 'ನಮಸ್ಕಾರ, $_userName' : 'Welcome, $_userName')
-                                  : (isKn ? 'ಕರ್ನಾಟಕ ರೇಷ್ಮೆ ಮಾರುಕಟ್ಟೆ' : 'Karnataka Silk Intelligence'),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 19,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              isKn ? 'ಇಂದಿನ ನೇರ ಹರಾಜು ದರಗಳು' : 'Live APMC Auction Rates Today',
-                              style: TextStyle(
-                                color: Colors.white.withOpacity(0.85),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        // Today (Locked Default)
+                        _buildDateChip(
+                          label: isKn ? 'ಇಂದು' : 'Today',
+                          isSelected: _selectedDate == todayStr,
+                          onTap: () => _onDateSelected(todayStr),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: AppTheme.accentGreen,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 7,
-                                height: 7,
-                                decoration: const BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                ),
+                        const SizedBox(width: 6),
+
+                        // Yesterday
+                        _buildDateChip(
+                          label: isKn ? 'ನಿನ್ನೆ' : 'Yesterday',
+                          isSelected: _selectedDate == yesterdayStr,
+                          onTap: () => _onDateSelected(yesterdayStr),
+                        ),
+                        const SizedBox(width: 6),
+
+                        // Day Before
+                        _buildDateChip(
+                          label: isKn ? 'ಮೊನ್ನೆ' : 'Day Before',
+                          isSelected: _selectedDate == dayBeforeStr,
+                          onTap: () => _onDateSelected(dayBeforeStr),
+                        ),
+                        const SizedBox(width: 6),
+
+                        // Calendar Picker Button
+                        InkWell(
+                          onTap: _pickCustomDate,
+                          borderRadius: BorderRadius.circular(16),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
+                                  ? Colors.white
+                                  : Colors.white.withOpacity(0.18),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
+                                    ? Colors.white
+                                    : Colors.white.withOpacity(0.35),
                               ),
-                              const SizedBox(width: 5),
-                              Text(
-                                isKn ? 'ನೇರ ಹರಾಜು' : 'LIVE APMC',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.calendar_month,
+                                  size: 14,
+                                  color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
+                                      ? AppTheme.primaryColor
+                                      : Colors.white,
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 4),
+                                Text(
+                                  (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
+                                      ? _selectedDate
+                                      : (isKn ? 'ದಿನಾಂಕ' : 'Pick Date'),
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
+                                        ? AppTheme.primaryColor
+                                        : Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -270,9 +363,37 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
-              // Spotlight Price Card
+              // Today's Auction Status Notice if Today not yet finalized
+              if (_selectedDate == todayStr && _isTodayEmpty)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.access_time, size: 16, color: Color(0xFFB45309)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          isKn
+                              ? 'ಇಂದಿನ ಹರಾಜು ನಡೆಯುತ್ತಿದೆ. ಹಿಂದಿನ ದಿನದ ದರಗಳನ್ನು ತೋರಿಸಲಾಗುತ್ತಿದೆ.'
+                              : 'Today’s auction in progress. Showing latest closing rates.',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF92400E), fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 10),
+
+              // Spotlight Hero Price Card for Selected Date
               if (_isLoading)
                 Container(
                   height: 180,
@@ -284,7 +405,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: const Center(child: CircularProgressIndicator()),
                 )
-              else if (topPrice != null)
+              else if (heroPrice.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Container(
@@ -303,9 +424,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Card Header
+                        // Card Header with Market Pin & Breed
                         Container(
-                          padding: const EdgeInsets.all(14),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           decoration: const BoxDecoration(
                             color: Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.only(
@@ -321,10 +442,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                   const Icon(Icons.location_on, size: 18, color: AppTheme.primaryColor),
                                   const SizedBox(width: 6),
                                   Text(
-                                    MarketLocalizations.getMarketName(context, topPrice['market_name'] ?? 'APMC'),
+                                    MarketLocalizations.getMarketName(context, heroPrice['market_name'] ?? 'APMC'),
                                     style: const TextStyle(
                                       fontSize: 16,
-                                      fontWeight: FontWeight.w800,
+                                      fontWeight: FontWeight.w900,
                                       color: Color(0xFF0F172A),
                                     ),
                                   ),
@@ -337,7 +458,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
-                                  topPrice['breed'] ?? 'CB',
+                                  heroPrice['breed'] ?? 'CB',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 12,
@@ -349,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
 
-                        // Card Body
+                        // Main Rate Body
                         Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(
@@ -372,9 +493,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                       ),
                                       const SizedBox(height: 2),
                                       Text(
-                                        '₹${topPrice['avg_price'] ?? '0'}',
+                                        '₹${heroPrice['avg_price'] ?? '0'}',
                                         style: const TextStyle(
-                                          fontSize: 32,
+                                          fontSize: 34,
                                           fontWeight: FontWeight.w900,
                                           color: AppTheme.accentGreen,
                                           letterSpacing: -0.5,
@@ -394,10 +515,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                       ),
                                       Text(
-                                        topPrice['report_date'] ?? '',
+                                        heroPrice['report_date'] ?? _selectedDate,
                                         style: const TextStyle(
                                           fontSize: 13,
-                                          fontWeight: FontWeight.w700,
+                                          fontWeight: FontWeight.w800,
                                           color: Color(0xFF334155),
                                         ),
                                       ),
@@ -410,7 +531,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               const Divider(height: 1, color: Color(0xFFE2E8F0)),
                               const SizedBox(height: 12),
 
-                              // Min / Max Row
+                              // Min / Max & WhatsApp Row
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
@@ -429,7 +550,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
                                             ),
                                             Text(
-                                              '₹${topPrice['min_price'] ?? '0'}',
+                                              '₹${heroPrice['min_price'] ?? '0'}',
                                               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF1E3A8A)),
                                             ),
                                           ],
@@ -449,7 +570,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                               style: const TextStyle(fontSize: 12, color: Color(0xFF475569)),
                                             ),
                                             Text(
-                                              '₹${topPrice['max_price'] ?? '0'}',
+                                              '₹${heroPrice['max_price'] ?? '0'}',
                                               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFB45309)),
                                             ),
                                           ],
@@ -458,9 +579,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ],
                                   ),
 
-                                  // WhatsApp Button
+                                  // WhatsApp 1-tap share
                                   InkWell(
-                                    onTap: () => _sharePriceOnWhatsApp(topPrice, isKn),
+                                    onTap: () => _sharePriceOnWhatsApp(heroPrice, isKn),
                                     borderRadius: BorderRadius.circular(12),
                                     child: Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -490,100 +611,66 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
-              // Quick Action Navigation Grid
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  isKn ? 'ತ್ವರಿತ ಸೇವೆಗಳು' : 'Quick Actions',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-
+              // Quick Action Tiles
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
                     Expanded(
-                      child: _buildActionCard(
+                      child: _buildActionTile(
                         icon: Icons.storefront,
-                        title: isKn ? 'ಮಾರುಕಟ್ಟೆ ದರ' : 'All Markets',
-                        subtitle: isKn ? 'ಎಲ್ಲ APMC ದರಗಳು' : 'Live rates',
+                        title: isKn ? 'ಎಲ್ಲ ಮಾರುಕಟ್ಟೆಗಳು' : 'All Markets',
                         color: const Color(0xFFEFF6FF),
                         iconColor: AppTheme.primaryColor,
                         onTap: () => widget.onTabChange(1),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: _buildActionCard(
+                      child: _buildActionTile(
                         icon: Icons.show_chart,
                         title: isKn ? 'ವಾರದ ವರದಿ' : '7-Day Stats',
-                        subtitle: isKn ? 'ದರ ಏರಿಳಿತಗಳು' : 'Weekly trend',
                         color: const Color(0xFFF0FDF4),
                         iconColor: AppTheme.accentGreen,
                         onTap: () => widget.onTabChange(2),
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: _buildActionCard(
+                      child: _buildActionTile(
                         icon: Icons.menu_book,
                         title: isKn ? 'ರೇಷ್ಮೆ ಮಾಹಿತಿ' : 'Knowledge',
-                        subtitle: isKn ? 'ವಿಡಿಯೋ ಮತ್ತು ಮಾಹಿತಿ' : 'Guides & tips',
                         color: const Color(0xFFFFFBEB),
                         iconColor: AppTheme.accentAmber,
                         onTap: () => widget.onTabChange(3),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildActionCard(
-                        icon: Icons.notifications_active,
-                        title: isKn ? 'ಸುದ್ದಿ ಮತ್ತು ಪ್ರಕಟಣೆ' : 'Alerts',
-                        subtitle: isKn ? 'ತಕ್ಷಣದ ಸೂಚನೆಗಳು' : 'Bulletins',
-                        color: const Color(0xFFFAF5FF),
-                        iconColor: const Color(0xFF9333EA),
-                        onTap: widget.onOpenNotifications,
-                      ),
-                    ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 22),
 
-              // Recent Rates Feed Header
+              // Rates for Selected Date Header
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      isKn ? 'ಇತ್ತೀಚಿನ ಮಾರುಕಟ್ಟೆ ದರಗಳು' : 'Latest Market Bulletins',
+                      isKn ? 'ದಿನಾಂಕದ ಮಾರುಕಟ್ಟೆ ದರಗಳು' : 'APMC Rates for Selected Date',
                       style: const TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
                         color: Color(0xFF0F172A),
                       ),
                     ),
                     InkWell(
                       onTap: () => widget.onTabChange(1),
                       child: Text(
-                        isKn ? 'ಎಲ್ಲವನ್ನೂ ವೀಕ್ಷಿಸಿ' : 'View All',
+                        isKn ? 'ವಿವರಗಳು' : 'View Full List',
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -596,113 +683,48 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 10),
 
-              // Horizontal Price Tickers
-              if (_latestPrices.isNotEmpty)
-                SizedBox(
-                  height: 140,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: _latestPrices.length,
-                    itemBuilder: (context, index) {
-                      final item = _latestPrices[index];
-                      return Container(
-                        width: 200,
-                        margin: const EdgeInsets.only(right: 12),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF0F172A).withOpacity(0.03),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+              // Price List for Selected Date
+              if (_datePrices.isEmpty && !_isLoading)
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Center(
+                    child: Column(
+                      children: [
+                        Icon(Icons.event_busy, size: 48, color: Colors.grey.shade400),
+                        const SizedBox(height: 8),
+                        Text(
+                          isKn ? 'ಈ ದಿನಾಂಕಕ್ಕೆ ಯಾವುದೇ ದರಗಳು ಲಭ್ಯವಿಲ್ಲ' : 'No auction records for this date',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    MarketLocalizations.getMarketName(context, item['market_name'] ?? ''),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0F172A)),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEFF6FF),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    item['breed'] ?? '',
-                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 11, color: AppTheme.primaryColor),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '₹${item['avg_price'] ?? '0'}',
-                                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppTheme.accentGreen),
-                                ),
-                                Text(
-                                  '${item['min_price']} - ₹${item['max_price']}/kg',
-                                  style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
-                            Text(
-                              item['report_date'] ?? '',
-                              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
+                )
+              else
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _datePrices.length,
+                  itemBuilder: (context, index) {
+                    final item = _datePrices[index];
+                    return _buildPriceRowCard(item, isKn);
+                  },
                 ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
 
-              // Featured Video Guides
+              // Featured Video Tutorials
               if (_featuredGuides.isNotEmpty) ...[
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        isKn ? 'ರೇಷ್ಮೆ ಕೃಷಿ ವಿಡಿಯೋಗಳು' : 'Sericulture Video Guides',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () => widget.onTabChange(3),
-                        child: Text(
-                          isKn ? 'ಹೆಚ್ಚಿನ ಮಾಹಿತಿ' : 'Explore',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.primaryColor,
-                          ),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    isKn ? 'ರೇಷ್ಮೆ ಕೃಷಿ ವಿಡಿಯೋ ಮಾರ್ಗದರ್ಶಿ' : 'Sericulture Video Tutorials',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF0F172A),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -718,32 +740,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     final videoId = guide['youtube_video_id'];
 
                     return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
+                      margin: const EdgeInsets.only(bottom: 10),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: ListTile(
-                        contentPadding: const EdgeInsets.all(12),
                         leading: Container(
-                          width: 48,
-                          height: 48,
+                          width: 44,
+                          height: 44,
                           decoration: BoxDecoration(
                             color: const Color(0xFFFEE2E2),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.play_arrow, color: Color(0xFFDC2626), size: 28),
+                          child: const Icon(Icons.play_arrow, color: Color(0xFFDC2626), size: 26),
                         ),
                         title: Text(
                           title ?? 'Sericulture Tutorial',
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
-                        ),
-                        subtitle: Text(
-                          isKn ? 'ಉಚಿತ ಕೃಷಿ ಸಲಹೆಗಳು' : 'Free farming advisory',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                         ),
                         trailing: const Icon(Icons.chevron_right, color: Color(0xFF94A3B8)),
                         onTap: () async {
@@ -768,64 +785,166 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildActionCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required Color color,
-    required Color iconColor,
+  Widget _buildDateChip({
+    required String label,
+    required bool isSelected,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.white.withOpacity(0.18),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.white.withOpacity(0.35),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: isSelected ? AppTheme.primaryColor : Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionTile({
+    required IconData icon,
+    required String title,
+    required Color color,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF0F172A).withOpacity(0.02),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
             ),
           ],
         ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(12),
+      ),
+    );
+  }
+
+  Widget _buildPriceRowCard(Map<String, dynamic> item, bool isKn) {
+    final market = item['market_name'] ?? 'APMC';
+    final breed = item['breed'] ?? 'CB';
+    final avg = item['avg_price'] ?? '0';
+    final min = item['min_price'] ?? '0';
+    final max = item['max_price'] ?? '0';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFEFF6FF),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.storefront, size: 18, color: AppTheme.primaryColor),
               ),
-              child: Icon(icon, color: iconColor, size: 22),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
+              const SizedBox(width: 10),
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                    MarketLocalizations.getMarketName(context, market),
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5, color: Color(0xFF0F172A)),
                   ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          breed,
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.primaryColor),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '₹$min - ₹$max',
+                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
+            ],
+          ),
+
+          // Average Rate & WhatsApp Button
+          Row(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '₹$avg',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppTheme.accentGreen),
+                  ),
+                  Text(
+                    isKn ? 'ಪ್ರತಿ ಕೆಜಿ' : 'per kg',
+                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: () => _sharePriceOnWhatsApp(item, isKn),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF25D366),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.share, color: Colors.white, size: 14),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

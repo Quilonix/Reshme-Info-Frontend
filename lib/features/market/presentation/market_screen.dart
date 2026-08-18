@@ -29,14 +29,16 @@ class _MarketScreenState extends State<MarketScreen> {
   ];
   String _selectedMarket = 'All';
   String _selectedBreed = 'All';
-  String? _selectedDate; // Format: YYYY-MM-DD
+  late String _selectedDate; // Default locked to today: YYYY-MM-DD
   String _searchQuery = '';
   bool _isLoading = true;
+  bool _isTodayEmpty = false;
 
   @override
   void initState() {
     super.initState();
     AnalyticsService.logScreenView('MarketPricesScreen');
+    _selectedDate = _formatDate(DateTime.now());
     _fetchMarketsAndPrices();
   }
 
@@ -48,8 +50,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Future<void> _fetchMarketsAndPrices({bool forceRefresh = false}) async {
-    final dateKey = _selectedDate ?? 'all';
-    final cacheKey = 'prices_${_selectedMarket}_${_selectedBreed}_$dateKey';
+    final cacheKey = 'prices_${_selectedMarket}_${_selectedBreed}_$_selectedDate';
 
     if (!forceRefresh) {
       final cachedPrices = await CacheService.get<List<dynamic>>(key: cacheKey);
@@ -71,7 +72,7 @@ class _MarketScreenState extends State<MarketScreen> {
     try {
       final client = Supabase.instance.client;
 
-      // Fetch active markets
+      // 1. Fetch active markets
       final List<dynamic> marketsData = await client
           .from('markets')
           .select('name')
@@ -82,7 +83,7 @@ class _MarketScreenState extends State<MarketScreen> {
         ...marketsData.map((m) => m['name'] as String)
       ];
 
-      // Fetch breeds
+      // 2. Fetch breeds
       final List<dynamic> breedsData = await client
           .from('breeds')
           .select('*')
@@ -93,29 +94,35 @@ class _MarketScreenState extends State<MarketScreen> {
         ...breedsData.map((b) => Map<String, dynamic>.from(b))
       ];
 
-      // Query cocoon prices with optional date filter
-      var query = client.from('cocoon_prices').select('*');
+      // 3. Query cocoon prices locked to selected date
+      var query = client.from('cocoon_prices').select('*').eq('report_date', _selectedDate);
       if (_selectedMarket != 'All') {
         query = query.eq('market_name', _selectedMarket);
       }
       if (_selectedBreed != 'All') {
         query = query.eq('breed', _selectedBreed);
       }
-      if (_selectedDate != null && _selectedDate!.isNotEmpty) {
-        query = query.eq('report_date', _selectedDate!);
-      }
 
       final List<dynamic> pricesData =
-          await query.order('report_date', ascending: false).limit(100);
+          await query.order('avg_price', ascending: false).limit(100);
 
-      await CacheService.set(key: cacheKey, data: pricesData);
+      bool todayEmpty = false;
+      List<dynamic> effectivePrices = pricesData;
+
+      // If today is empty, check if we should notify farmer
+      if (pricesData.isEmpty && _selectedDate == _formatDate(DateTime.now())) {
+        todayEmpty = true;
+      }
+
+      await CacheService.set(key: cacheKey, data: effectivePrices);
       await CacheService.set(key: 'markets_list', data: marketNames);
       await CacheService.set(key: 'breeds_list', data: dynamicBreeds);
 
       setState(() {
         _markets = marketNames;
         _breeds = dynamicBreeds;
-        _prices = List<Map<String, dynamic>>.from(pricesData);
+        _prices = List<Map<String, dynamic>>.from(effectivePrices);
+        _isTodayEmpty = todayEmpty;
         _isLoading = false;
       });
     } catch (e) {
@@ -141,7 +148,7 @@ class _MarketScreenState extends State<MarketScreen> {
     _fetchMarketsAndPrices(forceRefresh: true);
   }
 
-  void _onDateChanged(String? date) {
+  void _onDateChanged(String date) {
     setState(() {
       _selectedDate = date;
       _isLoading = true;
@@ -153,9 +160,9 @@ class _MarketScreenState extends State<MarketScreen> {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: _selectedDate != null ? DateTime.tryParse(_selectedDate!) ?? now : now,
+      initialDate: DateTime.tryParse(_selectedDate) ?? now,
       firstDate: DateTime(2024, 1, 1),
-      lastDate: now,
+      lastDate: now, // Locked to today and previous dates
       builder: (context, child) {
         return Theme(
           data: ThemeData.light().copyWith(
@@ -181,7 +188,7 @@ class _MarketScreenState extends State<MarketScreen> {
     final avg = price['avg_price'] ?? '0';
     final min = price['min_price'] ?? '0';
     final max = price['max_price'] ?? '0';
-    final date = price['report_date'] ?? '';
+    final date = price['report_date'] ?? _selectedDate;
     final lots = price['lot_number'] != null ? '${price['lot_number']} ಲಾಟ್‌ಗಳು' : '';
 
     final text = isKn
@@ -199,7 +206,7 @@ class _MarketScreenState extends State<MarketScreen> {
           'Breed: $breed\n'
           'Average: ₹$avg/kg\n'
           'Min: ₹$min | Max: ₹$max\n\n'
-          'Download Reshme Info App for live rates.';
+          'Download Reshme Info App for live market rates.';
 
     final uri = Uri.parse('whatsapp://send?text=${Uri.encodeComponent(text)}');
     try {
@@ -215,11 +222,11 @@ class _MarketScreenState extends State<MarketScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
     final isKn = Localizations.localeOf(context).languageCode == 'kn';
 
     final todayStr = _formatDate(DateTime.now());
     final yesterdayStr = _formatDate(DateTime.now().subtract(const Duration(days: 1)));
+    final dayBeforeStr = _formatDate(DateTime.now().subtract(const Duration(days: 2)));
 
     final filteredPrices = _prices.where((p) {
       if (_searchQuery.isEmpty) return true;
@@ -243,6 +250,7 @@ class _MarketScreenState extends State<MarketScreen> {
           ),
         ),
         actions: [
+          // Language Switcher Pill
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: InkWell(
@@ -282,7 +290,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ),
       body: Column(
         children: [
-          // Filter & Search Controls Header
+          // Filter & Sticky Date Controls Header
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
@@ -298,43 +306,41 @@ class _MarketScreenState extends State<MarketScreen> {
             ),
             child: Column(
               children: [
-                // Date Selector Bar
+                // Quick Date Navigation Bar (Today, Yesterday, Day Before, Calendar)
                 Row(
                   children: [
-                    // All Dates
-                    _buildDateChip(
-                      label: isKn ? 'ಎಲ್ಲ ದಿನಾಂಕ' : 'All Dates',
-                      isSelected: _selectedDate == null,
-                      onTap: () => _onDateChanged(null),
-                    ),
-                    const SizedBox(width: 6),
-                    // Today
                     _buildDateChip(
                       label: isKn ? 'ಇಂದು' : 'Today',
                       isSelected: _selectedDate == todayStr,
                       onTap: () => _onDateChanged(todayStr),
                     ),
                     const SizedBox(width: 6),
-                    // Yesterday
                     _buildDateChip(
                       label: isKn ? 'ನಿನ್ನೆ' : 'Yesterday',
                       isSelected: _selectedDate == yesterdayStr,
                       onTap: () => _onDateChanged(yesterdayStr),
                     ),
                     const SizedBox(width: 6),
-                    // Calendar Picker Button
+                    _buildDateChip(
+                      label: isKn ? 'ಮೊನ್ನೆ' : 'Day Before',
+                      isSelected: _selectedDate == dayBeforeStr,
+                      onTap: () => _onDateChanged(dayBeforeStr),
+                    ),
+                    const SizedBox(width: 6),
+
+                    // Interactive Calendar Picker
                     InkWell(
                       onTap: _pickCustomDate,
                       borderRadius: BorderRadius.circular(16),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                         decoration: BoxDecoration(
-                          color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                          color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
                               ? AppTheme.primaryColor
                               : const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                            color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                            color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
                                 ? AppTheme.primaryColor
                                 : const Color(0xFFCBD5E1),
                           ),
@@ -344,19 +350,19 @@ class _MarketScreenState extends State<MarketScreen> {
                             Icon(
                               Icons.calendar_month,
                               size: 14,
-                              color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                              color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
                                   ? Colors.white
                                   : const Color(0xFF475569),
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
-                                  ? _selectedDate!
+                              (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
+                                  ? _selectedDate
                                   : (isKn ? 'ಕ್ಯಾಲೆಂಡರ್' : 'Pick Date'),
                               style: TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w800,
-                                color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                                color: (_selectedDate != todayStr && _selectedDate != yesterdayStr && _selectedDate != dayBeforeStr)
                                     ? Colors.white
                                     : const Color(0xFF475569),
                               ),
@@ -370,7 +376,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
                 const SizedBox(height: 10),
 
-                // Search Input Box
+                // Search Box
                 Container(
                   height: 42,
                   decoration: BoxDecoration(
@@ -393,7 +399,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
                 const SizedBox(height: 10),
 
-                // Market Chips Bar
+                // Market Selection Chips
                 SizedBox(
                   height: 34,
                   child: ListView.builder(
@@ -429,7 +435,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
                 const SizedBox(height: 6),
 
-                // Breed Chips Bar
+                // Breed Selection Chips
                 SizedBox(
                   height: 30,
                   child: ListView.builder(
@@ -467,34 +473,30 @@ class _MarketScreenState extends State<MarketScreen> {
             ),
           ),
 
-          // Active Filter Indicator Bar
-          if (_selectedDate != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              color: const Color(0xFFEFF6FF),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.event, size: 16, color: AppTheme.primaryColor),
-                      const SizedBox(width: 6),
-                      Text(
-                        isKn ? 'ಆಯ್ಕೆಮಾಡಿದ ದಿನಾಂಕ: $_selectedDate' : 'Filtered by Date: $_selectedDate',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.primaryColor),
-                      ),
-                    ],
-                  ),
-                  InkWell(
-                    onTap: () => _onDateChanged(null),
-                    child: Text(
-                      isKn ? 'ರದ್ದುಮಾಡಿ' : 'Clear',
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFFDC2626)),
+          // Date Notice Banner
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            color: const Color(0xFFF1F5F9),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.event, size: 15, color: AppTheme.primaryColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      isKn ? 'ದಿನಾಂಕ: $_selectedDate' : 'Date: $_selectedDate',
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF334155)),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+                Text(
+                  isKn ? '${filteredPrices.length} ಮಾರುಕಟ್ಟೆಗಳು' : '${filteredPrices.length} records',
+                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                ),
+              ],
             ),
+          ),
 
           // Price Cards Feed
           Expanded(
@@ -505,21 +507,33 @@ class _MarketScreenState extends State<MarketScreen> {
                   ? const Center(child: CircularProgressIndicator())
                   : filteredPrices.isEmpty
                       ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.inbox_outlined, size: 56, color: Colors.grey.shade400),
-                              const SizedBox(height: 12),
-                              Text(
-                                isKn ? 'ಯಾವುದೇ ದರಗಳು ಲಭ್ಯವಿಲ್ಲ' : 'No price records found',
-                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                isKn ? 'ಬೇರೆ ದಿನಾಂಕ, ಮಾರುಕಟ್ಟೆ ಅಥವಾ ತಳಿ ಆಯ್ಕೆಮಾಡಿ' : 'Try selecting another date or market',
-                                style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                              ),
-                            ],
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.event_busy, size: 56, color: Colors.grey.shade400),
+                                const SizedBox(height: 12),
+                                Text(
+                                  _selectedDate == todayStr
+                                      ? (isKn ? 'ಇಂದಿನ ಹರಾಜು ದರಗಳು ಶೀಘ್ರದಲ್ಲೇ ಪ್ರಕಟವಾಗಲಿವೆ' : 'Today’s auction rates will be updated soon')
+                                      : (isKn ? 'ಈ ದಿನಾಂಕಕ್ಕೆ ಯಾವುದೇ ದರಗಳು ಲಭ್ಯವಿಲ್ಲ' : 'No auction records for $_selectedDate'),
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF475569)),
+                                ),
+                                const SizedBox(height: 8),
+                                if (_selectedDate == todayStr)
+                                  ElevatedButton.icon(
+                                    onPressed: () => _onDateChanged(yesterdayStr),
+                                    icon: const Icon(Icons.history, size: 16),
+                                    label: Text(isKn ? 'ನಿನ್ನೆಯ ದರಗಳನ್ನು ವೀಕ್ಷಿಸಿ' : 'View Yesterday’s Rates'),
+                                    style: ElevatedButton.styleFrom(
+                                      minimumSize: const Size(200, 42),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         )
                       : ListView.builder(
@@ -546,7 +560,7 @@ class _MarketScreenState extends State<MarketScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: isSelected ? AppTheme.primaryColor : const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(16),
@@ -557,7 +571,7 @@ class _MarketScreenState extends State<MarketScreen> {
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 11.5,
+            fontSize: 12,
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
             color: isSelected ? Colors.white : const Color(0xFF475569),
           ),
@@ -572,7 +586,7 @@ class _MarketScreenState extends State<MarketScreen> {
     final avg = price['avg_price'] ?? '0';
     final min = price['min_price'] ?? '0';
     final max = price['max_price'] ?? '0';
-    final date = price['report_date'] ?? '';
+    final date = price['report_date'] ?? _selectedDate;
     final lots = price['lot_number'];
     final quality = price['quality'] ?? 'A';
 
@@ -593,7 +607,7 @@ class _MarketScreenState extends State<MarketScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top Row: Market Name, Breed Badge, Quality Tag
+          // Top Bar: Market Name & Breed
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
@@ -607,7 +621,7 @@ class _MarketScreenState extends State<MarketScreen> {
                       MarketLocalizations.getMarketName(context, market),
                       style: const TextStyle(
                         fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
                         color: Color(0xFF0F172A),
                       ),
                     ),
@@ -654,7 +668,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
-          // Main Price & Stats Grid
+          // Main Price & Range Display
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
