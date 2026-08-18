@@ -68,12 +68,13 @@ class _StatsScreenState extends State<StatsScreen> {
         _priceSpots = spots.isNotEmpty
             ? spots
             : [
-                const FlSpot(0, 520),
-                const FlSpot(1, 580),
-                const FlSpot(2, 610),
-                const FlSpot(3, 590),
-                const FlSpot(4, 650),
-                const FlSpot(5, 680),
+                const FlSpot(0, 580),
+                const FlSpot(1, 610),
+                const FlSpot(2, 595),
+                const FlSpot(3, 640),
+                const FlSpot(4, 660),
+                const FlSpot(5, 650),
+                const FlSpot(6, 680),
               ];
         _isLoading = false;
       });
@@ -88,48 +89,54 @@ class _StatsScreenState extends State<StatsScreen> {
     final isKn = Localizations.localeOf(context).languageCode == 'kn';
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: Text(isKn ? 'ದರ ವಿಶ್ಲೇಷಣೆ & ಗ್ರಾಫ್' : 'Price Trends & Analytics'),
+        backgroundColor: AppTheme.primaryColor,
+        elevation: 0,
+        title: Text(
+          isKn ? 'ಮಾರುಕಟ್ಟೆ ವರದಿ & ವಿಶ್ಲೇಷಣೆ' : 'Market Trends & Analytics',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         actions: [
-          // 1-Tap Language Toggle in Header
-          InkWell(
-            onTap: widget.onToggleLanguage,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white.withOpacity(0.4)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.language, color: Colors.white, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    isKn ? 'EN' : 'ಕನ್ನಡ',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: InkWell(
+              onTap: widget.onToggleLanguage,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.language, color: Colors.white, size: 15),
+                    const SizedBox(width: 4),
+                    Text(
+                      isKn ? 'English' : 'ಕನ್ನಡ',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
+          const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.notifications_outlined),
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
             onPressed: widget.onOpenNotifications,
-            tooltip: 'Notifications',
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _fetchTrendData,
-            tooltip: 'Refresh',
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: SingleChildScrollView(
@@ -137,86 +144,82 @@ class _StatsScreenState extends State<StatsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Breed Toggle Selector
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.cardBorder),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _BreedToggleButton(
-                      title: MarketLocalization.getLocalizedBreed('CB', isKn),
-                      subtitle: isKn ? 'ಹೈಬ್ರಿಡ್ ಗೂಡು' : 'Hybrid',
-                      isSelected: _selectedBreed == 'CB',
-                      onTap: () {
-                        setState(() => _selectedBreed = 'CB');
-                        _fetchTrendData();
-                      },
+            // Breed Selector Chips
+            Row(
+              children: ['CB', 'BV', 'CB_GOLD'].map((b) {
+                final isSelected = _selectedBreed == b;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: Text(b == 'CB' ? 'Cross Breed (CB)' : b == 'BV' ? 'Bivoltine (BV)' : 'CB Gold'),
+                    selected: isSelected,
+                    onSelected: (_) {
+                      setState(() => _selectedBreed = b);
+                      _fetchTrendData();
+                    },
+                    selectedColor: AppTheme.primaryColor,
+                    backgroundColor: Colors.white,
+                    labelStyle: TextStyle(
+                      color: isSelected ? Colors.white : const Color(0xFF475569),
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                      fontSize: 12.5,
                     ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: _BreedToggleButton(
-                      title: MarketLocalization.getLocalizedBreed('BV', isKn),
-                      subtitle: isKn ? 'ಬಿಳಿ ಗೂಡು' : 'Bivoltine',
-                      isSelected: _selectedBreed == 'BV',
-                      onTap: () {
-                        setState(() => _selectedBreed = 'BV');
-                        _fetchTrendData();
-                      },
-                    ),
-                  ),
-                ],
-              ),
+                );
+              }).toList(),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
 
-            // Key Metrics Summary Cards
+            // Top 3 KPI Metric Cards
             Row(
               children: [
                 Expanded(
-                  child: _SummaryBox(
-                    label: isKn ? 'ವಾರದ ಗರಿಷ್ಠ' : 'Weekly High',
-                    value: '₹${_highestPrice.toInt()}',
-                    color: const Color(0xFF16A34A),
-                    icon: Icons.trending_up,
+                  child: _buildMetricCard(
+                    title: isKn ? 'ಗರಿಷ್ಠ ದರ' : 'Peak Rate',
+                    value: '₹${_highestPrice.toStringAsFixed(0)}',
+                    color: AppTheme.accentGreen,
+                    bgColor: const Color(0xFFF0FDF4),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: _SummaryBox(
-                    label: isKn ? 'ವಾರದ ಕನಿಷ್ಠ' : 'Weekly Low',
-                    value: '₹${_lowestPrice.toInt()}',
+                  child: _buildMetricCard(
+                    title: isKn ? 'ಕನಿಷ್ಠ ದರ' : 'Lowest Rate',
+                    value: '₹${_lowestPrice.toStringAsFixed(0)}',
                     color: const Color(0xFFDC2626),
-                    icon: Icons.trending_down,
+                    bgColor: const Color(0xFFFEF2F2),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: _SummaryBox(
-                    label: isKn ? 'ಸರಾಸರಿ ದರ' : 'Avg Rate',
-                    value: '₹${_currentAvg.toInt()}',
+                  child: _buildMetricCard(
+                    title: isKn ? 'ಸರಾಸರಿ' : '7-Day Avg',
+                    value: '₹${_currentAvg.toStringAsFixed(0)}',
                     color: AppTheme.primaryColor,
-                    icon: Icons.show_chart,
+                    bgColor: const Color(0xFFEFF6FF),
                   ),
                 ),
               ],
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
 
-            // Price Trend Chart Card
+            // Interactive Trend Chart Card
             Container(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.cardBorder, width: 1.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF0F172A).withOpacity(0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,31 +228,24 @@ class _StatsScreenState extends State<StatsScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        isKn ? '10 ದಿನಗಳ ದರ ಏರಿಳಿತ' : '10-Day Price Movement',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.textPrimary,
-                        ),
+                        isKn ? '7 ದಿನಗಳ ದರ ಏರಿಳಿತ ವರದಿ' : '7-Day Price Movement Trend',
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
-                          '${MarketLocalization.getLocalizedBreed(_selectedBreed, isKn)} (₹/kg)',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.primaryColor,
-                          ),
+                          _selectedBreed,
+                          style: const TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.w800, fontSize: 11),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 18),
+
                   SizedBox(
                     height: 200,
                     child: _isLoading
@@ -259,13 +255,14 @@ class _StatsScreenState extends State<StatsScreen> {
                               gridData: FlGridData(
                                 show: true,
                                 drawVerticalLine: false,
-                                horizontalInterval: 100,
-                                getDrawingHorizontalLine: (value) => const FlLine(
-                                  color: Color(0xFFF1F5F9),
+                                horizontalInterval: 50,
+                                getDrawingHorizontalLine: (_) => FlLine(
+                                  color: Colors.grey.shade200,
                                   strokeWidth: 1,
                                 ),
                               ),
                               titlesData: const FlTitlesData(
+                                show: true,
                                 topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                                 rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
                               ),
@@ -274,13 +271,13 @@ class _StatsScreenState extends State<StatsScreen> {
                                 LineChartBarData(
                                   spots: _priceSpots,
                                   isCurved: true,
-                                  color: AppTheme.primaryColor,
-                                  barWidth: 3,
+                                  color: AppTheme.accentGreen,
+                                  barWidth: 3.5,
                                   isStrokeCapRound: true,
                                   dotData: const FlDotData(show: true),
                                   belowBarData: BarAreaData(
                                     show: true,
-                                    color: AppTheme.primaryColor.withOpacity(0.08),
+                                    color: AppTheme.accentGreen.withOpacity(0.12),
                                   ),
                                 ),
                               ],
@@ -293,170 +290,90 @@ class _StatsScreenState extends State<StatsScreen> {
 
             const SizedBox(height: 20),
 
-            // Recent Price History
+            // Historical Table Feed
             Text(
-              isKn ? 'ಇತ್ತೀಚಿನ ಹರಾಜು ಇತಿಹಾಸ' : 'Recent Auction History',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppTheme.textPrimary,
-              ),
+              isKn ? 'ಇತ್ತೀಚಿನ ಹರಾಜು ಇತಿಹಾಸ' : 'Recent Auction Logs',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
-            if (_recentHistory.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppTheme.cardBorder),
-                ),
-                child: Center(
-                  child: Text(
-                    isKn ? 'ದಾಖಲೆಗಳು ಲಭ್ಯವಿಲ್ಲ' : 'No history records',
-                    style: const TextStyle(color: AppTheme.textSecondary),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _recentHistory.length,
+              itemBuilder: (context, index) {
+                final item = _recentHistory[index];
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                ),
-              )
-            else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _recentHistory.length,
-                itemBuilder: (context, index) {
-                  final item = _recentHistory[index];
-                  final avg = item['avg_price'] ?? item['price_per_kg'] ?? 0;
-                  final rawMarket = item['market_name'] ?? 'Market';
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 6),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppTheme.cardBorder),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              MarketLocalization.getLocalizedMarket(rawMarket, isKn),
-                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppTheme.textPrimary),
-                            ),
-                            Text(
-                              item['report_date'] ?? '',
-                              style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          '₹$avg/kg',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BreedToggleButton extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _BreedToggleButton({
-    required this.title,
-    required this.subtitle,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? AppTheme.primaryColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Column(
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: isSelected ? Colors.white : AppTheme.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: isSelected ? Colors.white.withOpacity(0.85) : AppTheme.textMuted,
-              ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            MarketLocalizations.getMarketName(context, item['market_name'] ?? 'APMC'),
+                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0F172A)),
+                          ),
+                          Text(
+                            item['report_date'] ?? '',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '₹${item['avg_price'] ?? '0'}/kg',
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppTheme.accentGreen),
+                          ),
+                          Text(
+                            '₹${item['min_price']} - ₹${item['max_price']}',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ],
         ),
       ),
     );
   }
-}
 
-class _SummaryBox extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  final IconData icon;
-
-  const _SummaryBox({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildMetricCard({
+    required String title,
+    required String value,
+    required Color color,
+    required Color bgColor,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppTheme.cardBorder),
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 14),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             value,
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: color),

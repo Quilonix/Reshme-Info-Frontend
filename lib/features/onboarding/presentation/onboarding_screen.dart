@@ -87,7 +87,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final phone = _phoneController.text.trim();
 
     try {
-      // 1. Save / Update in Supabase app_users table using phone_number as unique key
+      // 1. Save / Update in Supabase app_users table with unique phone_number
       await SupabaseConfig.client.from('app_users').upsert(
         {
           'name': name,
@@ -116,14 +116,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
       widget.onOnboardingComplete();
     } catch (e) {
-      // If network fails, still allow offline entry and save locally
+      debugPrint('Onboarding submission notice: $e');
+      // Still allow entering app offline
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('is_onboarded', true);
       await prefs.setString('user_name', name);
       await prefs.setString('user_phone', phone);
       await prefs.setString('user_preferred_market', _selectedMarket);
-
-      NotificationService.subscribeToMarket(_selectedMarket);
       widget.onOnboardingComplete();
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -135,213 +134,175 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final isKn = _selectedLanguage == 'kn';
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
-          child: Form(
-            key: _formKey,
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Header Logo & Title
-                Center(
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0xFFBFDBFE), width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.grass_rounded,
-                          size: 40,
-                          color: AppTheme.primaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'RESHME INFO',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          color: AppTheme.primaryColor,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      Text(
-                        isKn ? 'ಕರ್ನಾಟಕ ರೇಷ್ಮೆ ಬೆಳೆಗಾರರ ವೇದಿಕೆ' : 'Karnataka Silk Farmers Portal',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                    ],
+                // App Logo
+                Image.asset(
+                  'assets/reshme_logo.png',
+                  height: 72,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.eco, color: AppTheme.primaryColor, size: 64),
+                ),
+                const SizedBox(height: 12),
+
+                Text(
+                  isKn ? 'ರೇಷ್ಮೆ ಮಾಹಿತಿ' : 'Reshme Info',
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: AppTheme.primaryDark,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isKn ? 'ಕರ್ನಾಟಕ ರೇಷ್ಮೆ ಗೂಡು ಮಾರುಕಟ್ಟೆ ನೇರ ಹರಾಜು ದರಗಳು' : 'Real-Time Karnataka APMC Silk Cocoon Intelligence',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
 
                 const SizedBox(height: 28),
 
-                // 1. Language Selection (Large Tactile Buttons)
-                Text(
-                  isKn ? '1. ಭಾಷೆಯನ್ನು ಆಯ್ಕೆ ಮಾಡಿ' : '1. Select Your Language',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _LanguageCard(
-                        title: 'ಕನ್ನಡ',
-                        subtitle: 'Kannada',
-                        isSelected: _selectedLanguage == 'kn',
-                        onTap: () {
-                          setState(() => _selectedLanguage = 'kn');
-                          widget.onLanguageChange(const Locale('kn'));
-                          AnalyticsService.logLanguageChange('kn');
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _LanguageCard(
-                        title: 'English',
-                        subtitle: 'ಇಂಗ್ಲಿಷ್',
-                        isSelected: _selectedLanguage == 'en',
-                        onTap: () {
-                          setState(() => _selectedLanguage = 'en');
-                          widget.onLanguageChange(const Locale('en'));
-                          AnalyticsService.logLanguageChange('en');
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // 2. Farmer Details
-                Text(
-                  isKn ? '2. ರೈತರ ವಿವರ' : '2. Farmer Details',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-
-                // Name Input
-                TextFormField(
-                  controller: _nameController,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: InputDecoration(
-                    labelText: isKn ? 'ನಿಮ್ಮ ಹೆಸರು (Name)' : 'Full Name',
-                    prefixIcon: const Icon(Icons.person_outline, color: AppTheme.primaryColor),
-                  ),
-                  validator: (val) {
-                    if (val == null || val.trim().isEmpty) {
-                      return isKn ? 'ದಯವಿಟ್ಟು ನಿಮ್ಮ ಹೆಸರನ್ನು ನಮೂದಿಸಿ' : 'Please enter your name';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 12),
-
-                // Phone Input
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  maxLength: 10,
-                  decoration: InputDecoration(
-                    labelText: isKn ? 'ಮೊಬೈಲ್ ಸಂಖ್ಯೆ (Phone Number)' : 'Phone Number (10 digits)',
-                    prefixIcon: const Icon(Icons.phone_outlined, color: AppTheme.primaryColor),
-                    counterText: '',
-                  ),
-                  validator: (val) {
-                    if (val == null || val.trim().length < 10) {
-                      return isKn ? '10 ಅಂಕಿಯ ಮೊಬೈಲ್ ಸಂಖ್ಯೆಯನ್ನು ನಮೂದಿಸಿ' : 'Please enter 10 digit number';
-                    }
-                    return null;
-                  },
-                ),
-
-                const SizedBox(height: 24),
-
-                // 3. Preferred APMC Market
-                Text(
-                  isKn ? '3. ನಿಮ್ಮ ಹತ್ತಿರದ ರೇಷ್ಮೆ ಮಾರುಕಟ್ಟೆ' : '3. Preferred APMC Silk Market',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                    color: AppTheme.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 10),
-
+                // Language Selection Card
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppTheme.cardBorder, width: 1.2),
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                   ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      value: _selectedMarket,
-                      icon: const Icon(Icons.keyboard_arrow_down, color: AppTheme.primaryColor),
-                      items: _markets.map((m) {
-                        return DropdownMenuItem(
-                          value: m,
-                          child: Text(
-                            MarketLocalization.getLocalizedMarket(m, isKn),
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.textPrimary,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isKn ? 'ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ / Select Language' : 'Select Language / ಭಾಷೆ',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF334155)),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildLanguageOption(
+                              label: 'ಕನ್ನಡ',
+                              sub: 'Kannada',
+                              langCode: 'kn',
+                              isSelected: _selectedLanguage == 'kn',
                             ),
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (val) {
-                        if (val != null) setState(() => _selectedMarket = val);
-                      },
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildLanguageOption(
+                              label: 'English',
+                              sub: 'English',
+                              langCode: 'en',
+                              isSelected: _selectedLanguage == 'en',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Farmer Details Form
+                Form(
+                  key: _formKey,
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isKn ? 'ರೈತರ ವಿವರಗಳು' : 'Farmer Details',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Name Field
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            labelText: isKn ? 'ನಿಮ್ಮ ಹೆಸರು (Farmer Name)' : 'Your Name',
+                            prefixIcon: const Icon(Icons.person_outline, size: 20, color: Color(0xFF64748B)),
+                          ),
+                          validator: (v) => (v == null || v.trim().isEmpty)
+                              ? (isKn ? 'ದಯವಿಟ್ಟು ನಿಮ್ಮ ಹೆಸರನ್ನು ನಮೂದಿಸಿ' : 'Please enter your name')
+                              : null,
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // Phone Field
+                        TextFormField(
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone,
+                          decoration: InputDecoration(
+                            labelText: isKn ? 'ಮೊಬೈಲ್ ಸಂಖ್ಯೆ (Mobile Number)' : 'Mobile Number',
+                            prefixIcon: const Icon(Icons.phone_outlined, size: 20, color: Color(0xFF64748B)),
+                          ),
+                          validator: (v) => (v == null || v.trim().length < 10)
+                              ? (isKn ? 'ಸರಿಯಾದ 10 ಅಂಕಿಗಳ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ನಮೂದಿಸಿ' : 'Enter a valid 10-digit phone number')
+                              : null,
+                        ),
+
+                        const SizedBox(height: 14),
+
+                        // Preferred Market Dropdown
+                        DropdownButtonFormField<String>(
+                          value: _selectedMarket,
+                          decoration: InputDecoration(
+                            labelText: isKn ? 'ಮುಖ್ಯ ಮಾರುಕಟ್ಟೆ (Primary APMC Market)' : 'Primary APMC Market',
+                            prefixIcon: const Icon(Icons.storefront_outlined, size: 20, color: Color(0xFF64748B)),
+                          ),
+                          items: _markets.map((m) {
+                            return DropdownMenuItem(
+                              value: m,
+                              child: Text(MarketLocalizations.getMarketName(context, m)),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) setState(() => _selectedMarket = val);
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 24),
 
                 // Submit Button
                 ElevatedButton(
                   onPressed: _isLoading ? null : _submitOnboarding,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
                   child: _isLoading
-                      ? const SizedBox(
-                          height: 22,
-                          width: 22,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                        )
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : Text(
-                          isKn ? 'ಪ್ರಾರಂಭಿಸಿ (Get Started)' : 'Get Started',
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                          isKn ? 'ಪ್ರಾರಂಭಿಸಿ (Explore Live Rates)' : 'Get Started',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                         ),
                 ),
+                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -349,53 +310,46 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       ),
     );
   }
-}
 
-class _LanguageCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _LanguageCard({
-    required this.title,
-    required this.subtitle,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildLanguageOption({
+    required String label,
+    required String sub,
+    required String langCode,
+    required bool isSelected,
+  }) {
     return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      onTap: () {
+        setState(() => _selectedLanguage = langCode);
+        widget.onLanguageChange(Locale(langCode));
+      },
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          color: isSelected ? AppTheme.primaryColor : Colors.white,
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? AppTheme.primaryColor : AppTheme.cardBorder,
-            width: isSelected ? 2 : 1.2,
+            color: isSelected ? AppTheme.primaryColor : const Color(0xFFCBD5E1),
+            width: isSelected ? 2 : 1,
           ),
         ),
         child: Column(
           children: [
             Text(
-              title,
+              label,
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.w900,
-                color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                color: isSelected ? Colors.white : const Color(0xFF0F172A),
               ),
             ),
             const SizedBox(height: 2),
             Text(
-              subtitle,
+              sub,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: isSelected ? AppTheme.primaryColor : AppTheme.textMuted,
+                color: isSelected ? Colors.white70 : const Color(0xFF64748B),
               ),
             ),
           ],

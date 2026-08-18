@@ -22,7 +22,7 @@ class AboutScreen extends StatefulWidget {
 }
 
 class _AboutScreenState extends State<AboutScreen> {
-  String _quilonixStatus = 'Connected';
+  String _quilonixStatus = 'Live & Operational';
   bool _quilonixOnline = true;
 
   @override
@@ -37,7 +37,7 @@ class _AboutScreenState extends State<AboutScreen> {
       if (mounted) {
         setState(() {
           _quilonixOnline = res.statusCode == 200;
-          _quilonixStatus = _quilonixOnline ? 'Live & Operational' : 'Online';
+          _quilonixStatus = _quilonixOnline ? 'Live & Operational' : 'Official Partner';
         });
       }
     } catch (_) {
@@ -56,98 +56,143 @@ class _AboutScreenState extends State<AboutScreen> {
     }
   }
 
+  Future<void> _sendSupportEmail() async {
+    final uri = Uri.parse('mailto:reshmeinfo@quilonix.in?subject=Reshme%20Info%20Support%20Inquiry');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final currentLocale = Localizations.localeOf(context);
-    final isKn = currentLocale.languageCode == 'kn';
+    final isKn = Localizations.localeOf(context).languageCode == 'kn';
 
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: Text(isKn ? 'ಆ್ಯಪ್ ವಿವರ & ಸೆಟ್ಟಿಂಗ್ಸ್' : 'About & Settings'),
+        backgroundColor: AppTheme.primaryColor,
+        elevation: 0,
+        title: Text(
+          isKn ? 'ನಮ್ಮ ಬಗ್ಗೆ & ಸಂಪರ್ಕ' : 'About & Support',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         actions: [
-          // 1-Tap Language Toggle in Header
-          InkWell(
-            onTap: widget.onToggleLanguage,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white.withOpacity(0.4)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.language, color: Colors.white, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    isKn ? 'EN' : 'ಕನ್ನಡ',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: InkWell(
+              onTap: widget.onToggleLanguage,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.language, color: Colors.white, size: 15),
+                    const SizedBox(width: 4),
+                    Text(
+                      isKn ? 'English' : 'ಕನ್ನಡ',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
+          const SizedBox(width: 8),
           IconButton(
-            icon: const Icon(Icons.notifications_outlined),
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
             onPressed: widget.onOpenNotifications,
-            tooltip: 'Notifications',
           ),
+          const SizedBox(width: 4),
         ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // App Branding Card
+            // App Branding Header
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.cardBorder, width: 1.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
               ),
               child: Column(
                 children: [
                   Image.asset(
                     'assets/reshme_logo.png',
-                    height: 80,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFEFF6FF),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.grass_rounded, size: 40, color: AppTheme.primaryColor),
-                    ),
+                    height: 64,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.eco, color: AppTheme.primaryColor, size: 56),
                   ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Reshme Info (ರೇಷ್ಮೆ ಮಾಹಿತಿ)',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppTheme.textPrimary),
+                  const SizedBox(height: 10),
+                  Text(
+                    isKn ? 'ರೇಷ್ಮೆ ಮಾಹಿತಿ 2.0' : 'Reshme Info 2.0',
+                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppTheme.primaryDark),
                   ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    'Version 2.0.0 (Production Release)',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
-                  ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 4),
                   Text(
                     isKn
-                        ? 'ಕರ್ನಾಟಕದ ರೇಷ್ಮೆ ಕೃಷಿಕರು ಮತ್ತು ವ್ಯಾಪಾರಿಗಳಿಗೆ ನೈಜ ಸಮಯದ ಮಾರುಕಟ್ಟೆ ಹರಾಜು ಧಾರಣೆಗಳನ್ನು ಒದಗಿಸುವ ವೇದಿಕೆ.'
-                        : 'A dedicated sericulture platform delivering verified, real-time silk cocoon market auction prices across Karnataka APMC markets.',
+                        ? 'ಕರ್ನಾಟಕದ ರೈತರು ಮತ್ತು ರೀಲರ್‌ಗಳಿಗಾಗಿ ಅಧಿಕೃತ ರೇಷ್ಮೆ ಮಾರುಕಟ್ಟೆ ನೇರ ಹರಾಜು ದರಗಳ ವೇದಿಕೆ'
+                        : 'Karnataka Real-Time APMC Silk Cocoon Auction Intelligence Platform',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary, height: 1.4),
+                    style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Free & No Ads Badges
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0FDF4),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle, color: AppTheme.accentGreen, size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              isKn ? '100% ಉಚಿತ' : '100% Free',
+                              style: const TextStyle(color: AppTheme.accentGreen, fontWeight: FontWeight.w800, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.block, color: AppTheme.primaryColor, size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              isKn ? 'ಜಾಹೀರಾತು ರಹಿತ' : 'Zero Ads',
+                              style: const TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.w800, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -155,19 +200,17 @@ class _AboutScreenState extends State<AboutScreen> {
 
             const SizedBox(height: 16),
 
-            // About Quilonix Card (Fetched & Linked with Quilonix.in)
+            // Quilonix Technology Partner Card
             Container(
-              width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFBFDBFE), width: 1.5),
+                color: const Color(0xFF0F172A),
+                borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.02),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 16,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -175,114 +218,71 @@ class _AboutScreenState extends State<AboutScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(Icons.business_rounded, color: AppTheme.primaryColor, size: 20),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.hub_outlined, color: Colors.white, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'QUILONIX',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Text(
-                                  'Quilonix',
-                                  style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w900,
-                                    color: AppTheme.textPrimary,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF0FDF4),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: const Color(0xFF86EFAC)),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        width: 6,
-                                        height: 6,
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF16A34A),
-                                          shape: BoxShape.circle,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        _quilonixOnline ? 'Live' : _quilonixStatus,
-                                        style: const TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: Color(0xFF16A34A),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              isKn ? 'ತಂತ್ರಜ್ಞಾನ ಮತ್ತು ನಾವೀನ್ಯತೆ ಪಾಲುದಾರರು' : 'Technology & Innovation Partner',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.textMuted,
-                              ),
-                            ),
-                          ],
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: AppTheme.accentGreen.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppTheme.accentGreen),
+                        ),
+                        child: Text(
+                          _quilonixStatus,
+                          style: const TextStyle(color: Color(0xFF86EFAC), fontSize: 10.5, fontWeight: FontWeight.w800),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Text(
-                    isKn
-                        ? 'ಕ್ವಿಲೋನಿಕ್ಸ್ (Quilonix) ಭಾರತದ ಕೃಷಿಕರಿಗೆ ಡಿಜಿಟಲ್ ತಂತ್ರಜ್ಞಾನ ಮತ್ತು ನೈಜ ಸಮಯದ ಮಾರುಕಟ್ಟೆ ಬುದ್ಧಿಮತ್ತೆ ಒದಗಿಸುವ ಪ್ರಮುಖ ಸಾಫ್ಟ್‌ವೇರ್ ಸಂಸ್ಥೆಯಾಗಿದೆ.'
-                        : 'Quilonix builds next-generation digital intelligence platforms empowering Indian farmers with real-time APMC data analytics.',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppTheme.textSecondary,
-                      height: 1.4,
-                    ),
+                  const Text(
+                    'Built with advanced agentic cloud infrastructure and high-throughput real-time streaming engines.',
+                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12.5, height: 1.4),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
+
                   InkWell(
                     onTap: () => _openWebUrl('https://quilonix.in'),
-                    borderRadius: BorderRadius.circular(10),
                     child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        color: Colors.white.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withOpacity(0.2)),
                       ),
                       child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.language, color: AppTheme.primaryColor, size: 16),
-                          SizedBox(width: 8),
+                          Icon(Icons.language, color: Colors.white, size: 16),
+                          SizedBox(width: 6),
                           Text(
-                            'Visit quilonix.in',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.primaryColor,
-                            ),
+                            'quilonix.in',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
                           ),
+                          SizedBox(width: 4),
+                          Icon(Icons.arrow_outward, color: Colors.white, size: 14),
                         ],
                       ),
                     ),
@@ -293,168 +293,97 @@ class _AboutScreenState extends State<AboutScreen> {
 
             const SizedBox(height: 16),
 
-            // Language Selector Card
+            // Support & Contact Card
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.cardBorder, width: 1.2),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    l10n.translate('change_language'),
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppTheme.textPrimary),
+                    isKn ? 'ಸಹಾಯ & ಬೆಂಬಲ' : 'Help & Farmer Support',
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 12),
-                  _LanguageTile(
-                    title: 'ಕನ್ನಡ (Kannada)',
-                    subtitle: 'ಕರ್ನಾಟಕದ ರೈತರಿಗೆ ಶಿಫಾರಸು ಮಾಡಲಾಗಿದೆ',
-                    isSelected: currentLocale.languageCode == 'kn',
-                    onTap: () {
-                      widget.onLanguageChange(const Locale('kn'));
-                      AnalyticsService.logLanguageChange('kn');
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _LanguageTile(
-                    title: 'English',
-                    subtitle: 'English language interface',
-                    isSelected: currentLocale.languageCode == 'en',
-                    onTap: () {
-                      widget.onLanguageChange(const Locale('en'));
-                      AnalyticsService.logLanguageChange('en');
-                    },
-                  ),
-                ],
-              ),
-            ),
 
-            const SizedBox(height: 16),
-
-            // Legal & Info Links
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppTheme.cardBorder, width: 1.2),
-              ),
-              child: Column(
-                children: [
-                  _LinkTile(
-                    icon: Icons.privacy_tip_outlined,
-                    title: isKn ? 'ಗೌಪ್ಯತಾ ನೀತಿ (Privacy Policy)' : 'Privacy Policy',
-                    onTap: () => _openWebUrl('https://reshmeinfo.com/privacy-policy'),
-                  ),
-                  const Divider(height: 1, color: AppTheme.cardBorder),
-                  _LinkTile(
-                    icon: Icons.description_outlined,
-                    title: isKn ? 'ಬಳಕೆಯ ನಿಯಮಗಳು (Terms of Service)' : 'Terms of Service',
-                    onTap: () => _openWebUrl('https://reshmeinfo.com/terms'),
-                  ),
-                  const Divider(height: 1, color: AppTheme.cardBorder),
-                  _LinkTile(
-                    icon: Icons.contact_support_outlined,
-                    title: isKn ? 'ಬೆಂಬಲ ಮತ್ತು ಸಂಪರ್ಕ (Help & Support)' : 'Help & Support',
-                    onTap: () => _openWebUrl('mailto:reshmeinfo@quilonix.in'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _LanguageTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _LanguageTile({
-    required this.title,
-    required this.subtitle,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? AppTheme.primaryColor : AppTheme.cardBorder,
-            width: isSelected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-              color: isSelected ? AppTheme.primaryColor : AppTheme.textMuted,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: isSelected ? AppTheme.primaryColor : AppTheme.textPrimary,
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.email_outlined, color: AppTheme.primaryColor, size: 20),
                     ),
+                    title: const Text(
+                      'reshmeinfo@quilonix.in',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0F172A)),
+                    ),
+                    subtitle: Text(
+                      isKn ? 'ಪ್ರಶ್ನೆಗಳು ಅಥವಾ ಸಲಹೆಗಳಿಗಾಗಿ ನಮಗೆ ಇಮೇಲ್ ಮಾಡಿ' : 'Official support email for farmer inquiries',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF94A3B8)),
+                    onTap: _sendSupportEmail,
                   ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  const Divider(height: 16, color: Color(0xFFF1F5F9)),
+
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.shield_outlined, color: AppTheme.accentGreen, size: 20),
+                    ),
+                    title: Text(
+                      isKn ? 'ಗೌಪ್ಯತಾ ನೀತಿ' : 'Privacy Policy',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0F172A)),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF94A3B8)),
+                    onTap: () => _openWebUrl('https://reshmeinfo.quilonix.in/privacy-policy'),
+                  ),
+                  const Divider(height: 16, color: Color(0xFFF1F5F9)),
+
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.description_outlined, color: AppTheme.accentAmber, size: 20),
+                    ),
+                    title: Text(
+                      isKn ? 'ನಿಯಮಗಳು ಮತ್ತು ಷರತ್ತುಗಳು' : 'Terms & Conditions',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: Color(0xFF0F172A)),
+                    ),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF94A3B8)),
+                    onTap: () => _openWebUrl('https://reshmeinfo.quilonix.in/terms'),
                   ),
                 ],
               ),
             ),
+
+            const SizedBox(height: 20),
+
+            // App Build Version
+            Text(
+              'Reshme Info v2.0.0 (Build 20260818)',
+              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _LinkTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-
-  const _LinkTile({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: AppTheme.primaryColor, size: 22),
-      title: Text(
-        title,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
-      ),
-      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppTheme.textMuted),
-      onTap: onTap,
     );
   }
 }

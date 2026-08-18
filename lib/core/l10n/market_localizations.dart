@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class MarketLocalization {
   static const Map<String, String> _kannadaMarkets = {
     'all': 'ಎಲ್ಲಾ ಮಾರುಕಟ್ಟೆಗಳು',
@@ -48,5 +50,17 @@ class MarketLocalization {
     if (breedCode == 'CB_GOLD') return 'ಸಿ.ಬಿ ಗೋಲ್ಡ್';
     if (breedCode == 'All') return 'ಎಲ್ಲ ತಳಿಗಳು';
     return breedCode;
+  }
+}
+
+class MarketLocalizations {
+  static String getMarketName(BuildContext context, String marketName) {
+    final isKn = Localizations.localeOf(context).languageCode == 'kn';
+    return MarketLocalization.getLocalizedMarket(marketName, isKn);
+  }
+
+  static String getBreedName(BuildContext context, String breedCode) {
+    final isKn = Localizations.localeOf(context).languageCode == 'kn';
+    return MarketLocalization.getLocalizedBreed(breedCode, isKn);
   }
 }

@@ -10,7 +10,6 @@ class AnalyticsService {
     Map<String, dynamic>? parameters,
   }) async {
     try {
-      // Firebase Analytics parameters must be String, num, or null
       final Map<String, Object>? sanitized = parameters?.map(
         (key, value) => MapEntry(key, value is Object ? value : value.toString()),
       );
@@ -43,11 +42,41 @@ class AnalyticsService {
     );
   }
 
+  static Future<void> logMarketFilter(String marketName) async {
+    await logSelectMarket(marketName);
+  }
+
   // Track breed selection
   static Future<void> logSelectBreed(String breed) async {
     await logEvent(
       name: 'select_breed',
       parameters: {'breed': breed},
+    );
+  }
+
+  static Future<void> logBreedFilter(String breed) async {
+    await logSelectBreed(breed);
+  }
+
+  // Track WhatsApp shares
+  static Future<void> logWhatsAppShare(String market, String breed) async {
+    await logEvent(
+      name: 'share_whatsapp',
+      parameters: {
+        'market_name': market,
+        'breed': breed,
+      },
+    );
+  }
+
+  // Track guide views
+  static Future<void> logViewGuide(String title, String type) async {
+    await logEvent(
+      name: 'view_guide',
+      parameters: {
+        'title': title,
+        'type': type,
+      },
     );
   }
 
@@ -59,18 +88,7 @@ class AnalyticsService {
 
     await logEvent(
       name: 'change_language',
-      parameters: {'language': languageCode},
-    );
-  }
-
-  // Track knowledge guide engagement
-  static Future<void> logViewGuide(String guideTitle, String guideType) async {
-    await logEvent(
-      name: 'view_guide',
-      parameters: {
-        'item_name': guideTitle,
-        'content_type': guideType,
-      },
+      parameters: {'new_language': languageCode},
     );
   }
 }

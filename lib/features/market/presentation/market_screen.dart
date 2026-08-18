@@ -29,6 +29,8 @@ class _MarketScreenState extends State<MarketScreen> {
   ];
   String _selectedMarket = 'All';
   String _selectedBreed = 'All';
+  String? _selectedDate; // Format: YYYY-MM-DD
+  String _searchQuery = '';
   bool _isLoading = true;
 
   @override
@@ -38,8 +40,16 @@ class _MarketScreenState extends State<MarketScreen> {
     _fetchMarketsAndPrices();
   }
 
+  String _formatDate(DateTime dt) {
+    final year = dt.year.toString();
+    final month = dt.month.toString().padLeft(2, '0');
+    final day = dt.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
   Future<void> _fetchMarketsAndPrices({bool forceRefresh = false}) async {
-    final cacheKey = 'prices_${_selectedMarket}_${_selectedBreed}';
+    final dateKey = _selectedDate ?? 'all';
+    final cacheKey = 'prices_${_selectedMarket}_${_selectedBreed}_$dateKey';
 
     if (!forceRefresh) {
       final cachedPrices = await CacheService.get<List<dynamic>>(key: cacheKey);
@@ -83,7 +93,7 @@ class _MarketScreenState extends State<MarketScreen> {
         ...breedsData.map((b) => Map<String, dynamic>.from(b))
       ];
 
-      // Query cocoon prices
+      // Query cocoon prices with optional date filter
       var query = client.from('cocoon_prices').select('*');
       if (_selectedMarket != 'All') {
         query = query.eq('market_name', _selectedMarket);
@@ -91,11 +101,13 @@ class _MarketScreenState extends State<MarketScreen> {
       if (_selectedBreed != 'All') {
         query = query.eq('breed', _selectedBreed);
       }
+      if (_selectedDate != null && _selectedDate!.isNotEmpty) {
+        query = query.eq('report_date', _selectedDate!);
+      }
 
       final List<dynamic> pricesData =
-          await query.order('report_date', ascending: false).limit(50);
+          await query.order('report_date', ascending: false).limit(100);
 
-      // Cache results
       await CacheService.set(key: cacheKey, data: pricesData);
       await CacheService.set(key: 'markets_list', data: marketNames);
       await CacheService.set(key: 'breeds_list', data: dynamicBreeds);
@@ -111,28 +123,92 @@ class _MarketScreenState extends State<MarketScreen> {
     }
   }
 
-  Future<void> _sharePrice(Map<String, dynamic> item, bool isKn) async {
-    final rawMarket = item['market_name'] ?? 'Market';
-    final market = MarketLocalization.getLocalizedMarket(rawMarket, isKn);
-    final breed = MarketLocalization.getLocalizedBreed(item['breed'] ?? 'CB', isKn);
-    final avg = item['avg_price'] ?? item['price_per_kg'] ?? 0;
-    final min = item['min_price'] ?? 0;
-    final max = item['max_price'] ?? 0;
-    final date = item['report_date'] ?? '';
+  void _onMarketChanged(String market) {
+    setState(() {
+      _selectedMarket = market;
+      _isLoading = true;
+    });
+    AnalyticsService.logMarketFilter(market);
+    _fetchMarketsAndPrices(forceRefresh: true);
+  }
+
+  void _onBreedChanged(String breed) {
+    setState(() {
+      _selectedBreed = breed;
+      _isLoading = true;
+    });
+    AnalyticsService.logBreedFilter(breed);
+    _fetchMarketsAndPrices(forceRefresh: true);
+  }
+
+  void _onDateChanged(String? date) {
+    setState(() {
+      _selectedDate = date;
+      _isLoading = true;
+    });
+    _fetchMarketsAndPrices(forceRefresh: true);
+  }
+
+  Future<void> _pickCustomDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate != null ? DateTime.tryParse(_selectedDate!) ?? now : now,
+      firstDate: DateTime(2024, 1, 1),
+      lastDate: now,
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: AppTheme.primaryColor,
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF0F172A),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      _onDateChanged(_formatDate(picked));
+    }
+  }
+
+  Future<void> _sharePriceOnWhatsApp(Map<String, dynamic> price, bool isKn) async {
+    final market = price['market_name'] ?? 'APMC';
+    final breed = price['breed'] ?? 'CB';
+    final avg = price['avg_price'] ?? '0';
+    final min = price['min_price'] ?? '0';
+    final max = price['max_price'] ?? '0';
+    final date = price['report_date'] ?? '';
+    final lots = price['lot_number'] != null ? '${price['lot_number']} ಲಾಟ್‌ಗಳು' : '';
 
     final text = isKn
-        ? '$market ರೇಷ್ಮೆ ಮಾರುಕಟ್ಟೆ ದರ ($date)\nತಳಿ: $breed\nಸರಾಸರಿ: ₹$avg/kg\nಕನಿಷ್ಠ: ₹$min | ಗರಿಷ್ಠ: ₹$max\n\nರೇಷ್ಮೆ ಮಾಹಿತಿ ಆ್ಯಪ್ ಮೂಲಕ ಹಂಚಿಕೊಳ್ಳಲಾಗಿದೆ.'
-        : '$market Silk Cocoon Price ($date)\nBreed: $breed\nAvg: Rs $avg/kg\nMin: Rs $min | Max: Rs $max\n\nShared via Reshme Info App.';
+        ? '*ರೇಷ್ಮೆ ಮಾಹಿತಿ (Reshme Info) ಮಾರುಕಟ್ಟೆ ಹರಾಜು ದರ*\n'
+          'ದಿನಾಂಕ: $date\n'
+          'ಮಾರುಕಟ್ಟೆ: $market\n'
+          'ತಳಿ: $breed\n'
+          'ಸರಾಸರಿ ದರ: ₹$avg/ಕೆಜಿ\n'
+          'ಕನಿಷ್ಠ: ₹$min | ಗರಿಷ್ಠ: ₹$max\n'
+          '$lots\n\n'
+          'ದೈನಂದಿನ ನೇರ ಮಾರುಕಟ್ಟೆ ದರಗಳಿಗಾಗಿ Reshme Info ಆ್ಯಪ್ ಡೌನ್‌ಲೋಡ್ ಮಾಡಿ.'
+        : '*Reshme Info APMC Silk Cocoon Auction Rate*\n'
+          'Date: $date\n'
+          'Market: $market\n'
+          'Breed: $breed\n'
+          'Average: ₹$avg/kg\n'
+          'Min: ₹$min | Max: ₹$max\n\n'
+          'Download Reshme Info App for live rates.';
 
-    final encoded = Uri.encodeComponent(text);
-    final whatsappUrl = Uri.parse('whatsapp://send?text=$encoded');
-    final webUrl = Uri.parse('https://api.whatsapp.com/send?text=$encoded');
-
+    final uri = Uri.parse('whatsapp://send?text=${Uri.encodeComponent(text)}');
     try {
-      if (await canLaunchUrl(whatsappUrl)) {
-        await launchUrl(whatsappUrl);
-      } else if (await canLaunchUrl(webUrl)) {
-        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        AnalyticsService.logWhatsAppShare(market, breed);
+      } else {
+        final webUri = Uri.parse('https://api.whatsapp.com/send?text=${Uri.encodeComponent(text)}');
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
       }
     } catch (_) {}
   }
@@ -142,339 +218,570 @@ class _MarketScreenState extends State<MarketScreen> {
     final l10n = AppLocalizations.of(context)!;
     final isKn = Localizations.localeOf(context).languageCode == 'kn';
 
+    final todayStr = _formatDate(DateTime.now());
+    final yesterdayStr = _formatDate(DateTime.now().subtract(const Duration(days: 1)));
+
+    final filteredPrices = _prices.where((p) {
+      if (_searchQuery.isEmpty) return true;
+      final q = _searchQuery.toLowerCase();
+      final market = (p['market_name'] ?? '').toLowerCase();
+      final breed = (p['breed'] ?? '').toLowerCase();
+      return market.contains(q) || breed.contains(q);
+    }).toList();
+
     return Scaffold(
-      backgroundColor: AppTheme.backgroundColor,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: Text(isKn ? 'ಮಾರುಕಟ್ಟೆ ದರಗಳು' : 'Market Rates'),
+        backgroundColor: AppTheme.primaryColor,
+        elevation: 0,
+        title: Text(
+          isKn ? 'ಮಾರುಕಟ್ಟೆ ಹರಾಜು ದರಗಳು' : 'APMC Auction Rates',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
         actions: [
-          // 1-Tap Language Toggle in Header
-          InkWell(
-            onTap: widget.onToggleLanguage,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white.withOpacity(0.4)),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: InkWell(
+              onTap: widget.onToggleLanguage,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.language, color: Colors.white, size: 15),
+                    const SizedBox(width: 4),
+                    Text(
+                      isKn ? 'English' : 'ಕನ್ನಡ',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
+            onPressed: widget.onOpenNotifications,
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Filter & Search Controls Header
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.02),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                // Date Selector Bar
+                Row(
+                  children: [
+                    // All Dates
+                    _buildDateChip(
+                      label: isKn ? 'ಎಲ್ಲ ದಿನಾಂಕ' : 'All Dates',
+                      isSelected: _selectedDate == null,
+                      onTap: () => _onDateChanged(null),
+                    ),
+                    const SizedBox(width: 6),
+                    // Today
+                    _buildDateChip(
+                      label: isKn ? 'ಇಂದು' : 'Today',
+                      isSelected: _selectedDate == todayStr,
+                      onTap: () => _onDateChanged(todayStr),
+                    ),
+                    const SizedBox(width: 6),
+                    // Yesterday
+                    _buildDateChip(
+                      label: isKn ? 'ನಿನ್ನೆ' : 'Yesterday',
+                      isSelected: _selectedDate == yesterdayStr,
+                      onTap: () => _onDateChanged(yesterdayStr),
+                    ),
+                    const SizedBox(width: 6),
+                    // Calendar Picker Button
+                    InkWell(
+                      onTap: _pickCustomDate,
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                              ? AppTheme.primaryColor
+                              : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                                ? AppTheme.primaryColor
+                                : const Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_month,
+                              size: 14,
+                              color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                                  ? Colors.white
+                                  : const Color(0xFF475569),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                                  ? _selectedDate!
+                                  : (isKn ? 'ಕ್ಯಾಲೆಂಡರ್' : 'Pick Date'),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                                color: (_selectedDate != null && _selectedDate != todayStr && _selectedDate != yesterdayStr)
+                                    ? Colors.white
+                                    : const Color(0xFF475569),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 10),
+
+                // Search Input Box
+                Container(
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TextField(
+                    onChanged: (val) => setState(() => _searchQuery = val.trim()),
+                    decoration: InputDecoration(
+                      hintText: isKn ? 'ಮಾರುಕಟ್ಟೆ ಅಥವಾ ತಳಿ ಹುಡುಕಿ...' : 'Search APMC or breed...',
+                      hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                      prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // Market Chips Bar
+                SizedBox(
+                  height: 34,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _markets.length,
+                    itemBuilder: (context, index) {
+                      final market = _markets[index];
+                      final isSelected = _selectedMarket == market;
+                      final label = MarketLocalizations.getMarketName(context, market);
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          label: Text(label),
+                          selected: isSelected,
+                          onSelected: (_) => _onMarketChanged(market),
+                          selectedColor: AppTheme.primaryColor,
+                          backgroundColor: const Color(0xFFF8FAFC),
+                          labelStyle: TextStyle(
+                            color: isSelected ? Colors.white : const Color(0xFF475569),
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                          ),
+                          side: BorderSide(
+                            color: isSelected ? AppTheme.primaryColor : const Color(0xFFCBD5E1),
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+                const SizedBox(height: 6),
+
+                // Breed Chips Bar
+                SizedBox(
+                  height: 30,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _breeds.length,
+                    itemBuilder: (context, index) {
+                      final breedItem = _breeds[index];
+                      final code = breedItem['code'] ?? '';
+                      final isSelected = _selectedBreed == code;
+                      final name = isKn ? (breedItem['name_kn'] ?? code) : (breedItem['name'] ?? code);
+
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: FilterChip(
+                          label: Text(name),
+                          selected: isSelected,
+                          onSelected: (_) => _onBreedChanged(code),
+                          selectedColor: const Color(0xFFEFF6FF),
+                          backgroundColor: Colors.white,
+                          labelStyle: TextStyle(
+                            color: isSelected ? AppTheme.primaryColor : const Color(0xFF64748B),
+                            fontSize: 11,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500,
+                          ),
+                          side: BorderSide(
+                            color: isSelected ? AppTheme.primaryColor : const Color(0xFFE2E8F0),
+                          ),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Active Filter Indicator Bar
+          if (_selectedDate != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: const Color(0xFFEFF6FF),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Icon(Icons.language, color: Colors.white, size: 16),
-                  const SizedBox(width: 4),
-                  Text(
-                    isKn ? 'EN' : 'ಕನ್ನಡ',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 12,
+                  Row(
+                    children: [
+                      const Icon(Icons.event, size: 16, color: AppTheme.primaryColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        isKn ? 'ಆಯ್ಕೆಮಾಡಿದ ದಿನಾಂಕ: $_selectedDate' : 'Filtered by Date: $_selectedDate',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppTheme.primaryColor),
+                      ),
+                    ],
+                  ),
+                  InkWell(
+                    onTap: () => _onDateChanged(null),
+                    child: Text(
+                      isKn ? 'ರದ್ದುಮಾಡಿ' : 'Clear',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFFDC2626)),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined),
-            onPressed: widget.onOpenNotifications,
-            tooltip: 'Notifications',
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => _fetchMarketsAndPrices(forceRefresh: true),
-            tooltip: 'Refresh prices',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // 1. Horizontal Market Selector Chips with Kannada Translation
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: Row(
-                children: _markets.map((market) {
-                  final isSelected = _selectedMarket == market;
-                  final displayName = MarketLocalization.getLocalizedMarket(market, isKn);
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(
-                        displayName,
-                        style: TextStyle(
-                          color: isSelected ? Colors.white : AppTheme.textPrimary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                        ),
-                      ),
-                      selected: isSelected,
-                      selectedColor: AppTheme.primaryColor,
-                      backgroundColor: const Color(0xFFF1F5F9),
-                      showCheckmark: false,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      onSelected: (selected) {
-                        if (selected) {
-                          setState(() => _selectedMarket = market);
-                          AnalyticsService.logSelectMarket(market);
-                          _fetchMarketsAndPrices();
-                        }
-                      },
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
 
-          // 2. Breed Filter Row
-          Container(
-            color: Colors.white,
-            padding: const EdgeInsets.only(left: 14, right: 14, bottom: 10),
-            child: Row(
-              children: _breeds.map((breed) {
-                final isSelected = _selectedBreed == breed['code'];
-                final label = MarketLocalization.getLocalizedBreed(breed['code'], isKn);
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: InkWell(
-                      onTap: () {
-                        setState(() => _selectedBreed = breed['code']);
-                        AnalyticsService.logSelectBreed(breed['code']);
-                        _fetchMarketsAndPrices();
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isSelected ? const Color(0xFFEFF6FF) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSelected ? AppTheme.primaryColor : AppTheme.cardBorder,
-                            width: isSelected ? 1.5 : 1,
-                          ),
-                        ),
-                        child: Text(
-                          label,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected ? AppTheme.primaryColor : AppTheme.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-
-          const Divider(height: 1, color: AppTheme.cardBorder),
-
-          // 3. Price Cards List
+          // Price Cards Feed
           Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _prices.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.inventory_2_outlined, size: 48, color: AppTheme.textMuted),
-                            const SizedBox(height: 12),
-                            Text(
-                              isKn ? 'ಯಾವುದೇ ದರ ದಾಖಲಾಗಿಲ್ಲ' : 'No price records found for this filter',
-                              style: const TextStyle(fontSize: 15, color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: () => _fetchMarketsAndPrices(forceRefresh: true),
-                        child: ListView.builder(
-                          padding: const EdgeInsets.all(14),
-                          itemCount: _prices.length,
+            child: RefreshIndicator(
+              onRefresh: () => _fetchMarketsAndPrices(forceRefresh: true),
+              color: AppTheme.primaryColor,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : filteredPrices.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.inbox_outlined, size: 56, color: Colors.grey.shade400),
+                              const SizedBox(height: 12),
+                              Text(
+                                isKn ? 'ಯಾವುದೇ ದರಗಳು ಲಭ್ಯವಿಲ್ಲ' : 'No price records found',
+                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                isKn ? 'ಬೇರೆ ದಿನಾಂಕ, ಮಾರುಕಟ್ಟೆ ಅಥವಾ ತಳಿ ಆಯ್ಕೆಮಾಡಿ' : 'Try selecting another date or market',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                          itemCount: filteredPrices.length,
                           itemBuilder: (context, index) {
-                            final item = _prices[index];
-                            return _ModernPriceCard(
-                              item: item,
-                              isKn: isKn,
-                              onShare: () => _sharePrice(item, isKn),
-                            );
+                            final price = filteredPrices[index];
+                            return _buildPriceCard(price, isKn);
                           },
                         ),
-                      ),
+            ),
           ),
         ],
       ),
     );
   }
-}
 
-class _ModernPriceCard extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final bool isKn;
-  final VoidCallback onShare;
+  Widget _buildDateChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? AppTheme.primaryColor : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? AppTheme.primaryColor : const Color(0xFFCBD5E1),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFF475569),
+          ),
+        ),
+      ),
+    );
+  }
 
-  const _ModernPriceCard({
-    required this.item,
-    required this.isKn,
-    required this.onShare,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final avg = item['avg_price'] ?? item['price_per_kg'] ?? 0;
-    final min = item['min_price'] ?? 0;
-    final max = item['max_price'] ?? 0;
-    final lots = item['lot_number'];
-    final weight = item['total_weight'];
-    final breedCode = item['breed'] ?? 'CB';
-    final marketName = item['market_name'] ?? 'Market';
-
-    final localizedMarket = MarketLocalization.getLocalizedMarket(marketName, isKn);
-    final localizedBreed = MarketLocalization.getLocalizedBreed(breedCode, isKn);
+  Widget _buildPriceCard(Map<String, dynamic> price, bool isKn) {
+    final market = price['market_name'] ?? 'APMC';
+    final breed = price['breed'] ?? 'CB';
+    final avg = price['avg_price'] ?? '0';
+    final min = price['min_price'] ?? '0';
+    final max = price['max_price'] ?? '0';
+    final date = price['report_date'] ?? '';
+    final lots = price['lot_number'];
+    final quality = price['quality'] ?? 'A';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.cardBorder, width: 1.2),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            color: const Color(0xFF0F172A).withOpacity(0.025),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top Row: Localized Market Name, Breed Badge, Date
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top Row: Market Name, Breed Badge, Quality Tag
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
+                    const Icon(Icons.storefront, color: AppTheme.primaryColor, size: 18),
+                    const SizedBox(width: 6),
                     Text(
-                      localizedMarket,
+                      MarketLocalizations.getMarketName(context, market),
                       style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
                       ),
                     ),
-                    const SizedBox(width: 8),
+                  ],
+                ),
+                Row(
+                  children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: breedCode == 'BV' ? const Color(0xFFFEF3C7) : const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: breedCode == 'BV' ? const Color(0xFFFDE68A) : const Color(0xFFBFDBFE),
-                        ),
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        localizedBreed,
-                        style: TextStyle(
-                          fontSize: 11,
+                        breed,
+                        style: const TextStyle(
+                          color: AppTheme.primaryColor,
+                          fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: breedCode == 'BV' ? const Color(0xFFB45309) : AppTheme.primaryColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Grade $quality',
+                        style: const TextStyle(
+                          color: AppTheme.accentGreen,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                   ],
                 ),
-                Text(
-                  item['report_date'] ?? '',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppTheme.textMuted,
-                  ),
-                ),
               ],
             ),
+          ),
 
-            const SizedBox(height: 12),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
-            // Middle Row: Average Price Spotlight
-            Row(
+          // Main Price & Stats Grid
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // Average Price Big Display
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isKn ? 'ಸರಾಸರಿ ಧಾರಣೆ' : 'Average Price',
+                      isKn ? 'ಸರಾಸರಿ ದರ' : 'Average Rate',
                       style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textSecondary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          '₹$avg',
-                          style: const TextStyle(
-                            fontSize: 30,
-                            fontWeight: FontWeight.w900,
-                            color: AppTheme.textPrimary,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          '/ kg',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textMuted,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      '₹$avg',
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: AppTheme.accentGreen,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    Text(
+                      isKn ? 'ಪ್ರತಿ ಕೆಜಿಗೆ' : 'per kg',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500),
                     ),
                   ],
                 ),
 
-                // Share Button (Large Tactile touch target)
+                // Min - Max Box
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            isKn ? 'ಕನಿಷ್ಠ: ' : 'Min: ',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                          Text(
+                            '₹$min',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            isKn ? 'ಗರಿಷ್ಠ: ' : 'Max: ',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                          Text(
+                            '₹$max',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppTheme.accentAmber),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Bottom Bar: Lots info, Date & WhatsApp Action
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(18),
+                bottomRight: Radius.circular(18),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today, size: 12, color: Colors.grey.shade600),
+                    const SizedBox(width: 4),
+                    Text(
+                      date,
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                    ),
+                    if (lots != null) ...[
+                      const SizedBox(width: 8),
+                      Text('•', style: TextStyle(color: Colors.grey.shade400)),
+                      const SizedBox(width: 8),
+                      Text(
+                        isKn ? '$lots ಲಾಟ್‌ಗಳು' : '$lots lots',
+                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ],
+                ),
+
+                // WhatsApp 1-tap share
                 InkWell(
-                  onTap: onShare,
+                  onTap: () => _sharePriceOnWhatsApp(price, isKn),
                   borderRadius: BorderRadius.circular(10),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
+                      color: const Color(0xFF25D366),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF86EFAC)),
                     ),
                     child: const Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.share, color: Color(0xFF16A34A), size: 16),
-                        SizedBox(width: 6),
+                        Icon(Icons.share, size: 13, color: Colors.white),
+                        SizedBox(width: 4),
                         Text(
-                          'Share',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF16A34A),
-                          ),
+                          'WhatsApp',
+                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white),
                         ),
                       ],
                     ),
@@ -482,66 +789,9 @@ class _ModernPriceCard extends StatelessWidget {
                 ),
               ],
             ),
-
-            const SizedBox(height: 12),
-
-            // Bottom Metric Blocks: Min, Max, Lots, Weight
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppTheme.cardBorder),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _MetricColumn(label: isKn ? 'ಕನಿಷ್ಠ' : 'Min', value: '₹$min', color: const Color(0xFF475569)),
-                  Container(width: 1, height: 20, color: AppTheme.cardBorder),
-                  _MetricColumn(label: isKn ? 'ಗರಿಷ್ಠ' : 'Max', value: '₹$max', color: const Color(0xFF166534)),
-                  if (lots != null) ...[
-                    Container(width: 1, height: 20, color: AppTheme.cardBorder),
-                    _MetricColumn(label: isKn ? 'ಲಾಟ್‌ಗಳು' : 'Lots', value: '$lots', color: AppTheme.primaryColor),
-                  ],
-                  if (weight != null) ...[
-                    Container(width: 1, height: 20, color: AppTheme.cardBorder),
-                    _MetricColumn(label: isKn ? 'ತೂಕ' : 'Qty', value: '${weight}kg', color: const Color(0xFF0D9488)),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
-}
-
-class _MetricColumn extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _MetricColumn({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppTheme.textMuted),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: color),
-        ),
-      ],
     );
   }
 }
